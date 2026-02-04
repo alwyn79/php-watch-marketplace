@@ -1,0 +1,13 @@
+{
+    "name": "alwyn/watch-store",
+    "description": "A luxury to budget watch store",
+    "require": {
+        "aws/aws-sdk-php": "^3.0",
+        "vlucas/phpdotenv": "^5.5"
+    },
+    "autoload": {
+        "psr-4": {
+            "App\\": "src/"
+        }
+    }
+}
