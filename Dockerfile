@@ -1,4 +1,4 @@
-FROM php:8.2-apache
+ROM php:8.2-apache
 
 # Install dependencies
 RUN apt-get update && apt-get install -y \
@@ -26,7 +26,7 @@ COPY . .
 RUN composer install --no-dev --optimize-autoloader
 
 # Set permissions
-RUN chown -R www-data:www-data /var/www/html/public/uploads
+RUN mkdir -p /var/www/html/public/uploads && chown -R www-data:www-data /var/www/html/public/uploads
 
 # Configure Apache DocumentRoot to /public
 ENV APACHE_DOCUMENT_ROOT /var/www/html/public
