@@ -5,26 +5,78 @@
     </div>
 
     <!-- Stats Overview -->
-    <div class="grid grid-cols-3 mb-8">
-        <div class="card p-8 text-center">
+    <div class="grid grid-cols-4 mb-8">
+        <div class="card p-6 text-center">
             <h2 class="text-gold"><?= count($users) ?></h2>
-            <p class="text-muted">Total Users</p>
+            <p class="text-muted text-sm">Total Users</p>
         </div>
-        <div class="card p-8 text-center">
+        <div class="card p-6 text-center">
             <h2 class="text-gold"><?= count($products) ?></h2>
-            <p class="text-muted">Total Products</p>
+            <p class="text-muted text-sm">Total Products</p>
         </div>
-        <div class="card p-8 text-center">
-            <h2 class="text-gold">₹<?= number_format(array_sum(array_column($products, 'price'))) ?></h2>
-            <p class="text-muted">Inventory Value</p>
+        <div class="card p-6 text-center">
+            <h2 class="text-gold">₹<?= number_format($totalSales) ?></h2>
+            <p class="text-muted text-sm">Total Sales</p>
+        </div>
+        <div class="card p-6 text-center">
+            <h2 class="text-gold"><?= count($orders) ?></h2>
+            <p class="text-muted text-sm">Total Orders</p>
         </div>
     </div>
 
-    <div class="grid" style="grid-template-columns: 1fr; gap: 4rem;">
+    <div class="grid" style="grid-template-columns: 1fr; gap: 3rem;">
         
+        <!-- Orders Management -->
+        <div class="card p-8">
+            <h3 class="mb-6">Manage Orders</h3>
+            <div style="overflow-x: auto;">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Order ID</th>
+                            <th>Customer</th>
+                            <th>Total</th>
+                            <th>Status</th>
+                            <th>Tracking</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($orders as $o): ?>
+                        <tr>
+                            <td>#<?= $o['id'] ?></td>
+                            <td><?= htmlspecialchars($o['user_name']) ?></td>
+                            <td class="text-gold">₹<?= number_format($o['total']) ?></td>
+                            <td>
+                                <span class="badge badge-sm" style="background: <?= $o['status'] === 'paid' ? '#065f46' : ($o['status'] === 'shipped' ? '#1e40af' : '#374151') ?>">
+                                    <?= strtoupper($o['status']) ?>
+                                </span>
+                            </td>
+                            <td><?= $o['tracking_number'] ?: '<span class="text-muted">None</span>' ?></td>
+                            <td>
+                                <form action="/admin/order/update" method="POST" class="flex gap-2">
+                                    <input type="hidden" name="id" value="<?= $o['id'] ?>">
+                                    <select name="status" class="form-control" style="padding: 0.25rem; font-size: 0.7rem; width: 100px;">
+                                        <option value="paid" <?= $o['status'] == 'paid' ? 'selected' : '' ?>>Paid</option>
+                                        <option value="shipped" <?= $o['status'] == 'shipped' ? 'selected' : '' ?>>Shipped</option>
+                                        <option value="completed" <?= $o['status'] == 'completed' ? 'selected' : '' ?>>Completed</option>
+                                        <option value="cancelled" <?= $o['status'] == 'cancelled' ? 'selected' : '' ?>>Cancelled</option>
+                                    </select>
+                                    <input type="text" name="tracking_number" placeholder="Tracking #" class="form-control" value="<?= htmlspecialchars($o['tracking_number'] ?? '') ?>" style="padding: 0.25rem; font-size: 0.7rem; width: 80px;">
+                                    <button type="submit" class="btn btn-sm">Update</button>
+                                </form>
+                            </td>
+                        </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         <!-- Products Management -->
         <div class="card p-8">
             <h3 class="mb-4">Manage Inventory</h3>
+            <!-- ... rest of products table ... -->
             <div style="overflow-x: auto;">
                 <table>
                     <thead>
@@ -32,7 +84,7 @@
                             <th style="width: 50px;">Img</th>
                             <th>Name</th>
                             <th>Price</th>
-                            <th>Tier</th>
+                            <th>Stock</th>
                             <th>Seller</th>
                             <th>Actions</th>
                         </tr>
@@ -49,7 +101,7 @@
                             </td>
                             <td><?= htmlspecialchars($p['name']) ?></td>
                             <td class="text-gold">₹<?= number_format($p['price']) ?></td>
-                            <td><span class="badge badge-sm badge-<?= $p['tier'] ?>" style="position:static; font-size: 0.6rem;"><?= strtoupper($p['tier']) ?></span></td>
+                            <td class="<?= ($p['stock'] ?? 10) < 5 ? 'text-red' : '' ?>"><?= $p['stock'] ?? 10 ?></td>
                             <td class="text-muted" style="font-size: 0.8rem;"><?= htmlspecialchars($p['seller_name']) ?></td>
                             <td>
                                 <div class="flex gap-4">
@@ -101,24 +153,28 @@
                                 <?php elseif ($u['status'] === 'pending'): ?>
                                     <span style="color: orange;">Pending</span>
                                 <?php else: ?>
-                                    <span style="color: red;">Rejected</span>
+                                    <span style="color: red;">Rejected/Suspended</span>
                                 <?php endif; ?>
                             </td>
                             <td>
-                                <?php if ($u['status'] === 'pending'): ?>
-                                    <form action="/admin/user/approve" method="POST" style="display:inline;">
-                                        <input type="hidden" name="id" value="<?= $u['id'] ?>">
+                                <form action="/admin/user/approve" method="POST" style="display:inline;">
+                                    <input type="hidden" name="id" value="<?= $u['id'] ?>">
+                                    <?php if ($u['status'] === 'pending'): ?>
                                         <button type="submit" name="action" value="approve" class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">Approve</button>
                                         <button type="submit" name="action" value="reject" class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">Reject</button>
-                                    </form>
-                                <?php else: ?>
-                                    <button class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;" disabled>Manage</button>
-                                <?php endif; ?>
+                                    <?php elseif ($u['status'] === 'approved' && $u['role'] !== 'admin'): ?>
+                                        <button type="submit" name="action" value="reject" class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.7rem; color: var(--red);">Suspend</button>
+                                    <?php elseif ($u['status'] === 'rejected'): ?>
+                                        <button type="submit" name="action" value="approve" class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">Activate</button>
+                                    <?php endif; ?>
+                                </form>
                             </td>
                         </tr>
                         <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
+    </div>
+</div>
     </div>
 </div>

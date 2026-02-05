@@ -11,17 +11,17 @@
         <form action="/register" method="POST">
             <div class="form-group">
                 <label>Full Name</label>
-                <input type="text" name="name" required>
+                <input type="text" name="name" class="form-control" required>
             </div>
             
             <div class="form-group">
                 <label>Email Address</label>
-                <input type="email" name="email" required>
+                <input type="email" name="email" class="form-control" required>
             </div>
 
             <div class="form-group">
                 <label>Account Type</label>
-                <select name="role">
+                <select name="role" class="form-control">
                     <option value="user">Customer (I want to buy)</option>
                     <option value="seller">Seller (I want to list watches)</option>
                 </select>
@@ -29,7 +29,7 @@
 
             <div class="form-group">
                 <label>Password</label>
-                <input type="password" name="password" required>
+                <input type="password" name="password" class="form-control" required>
             </div>
             
             <button type="submit" class="btn btn-primary" style="width: 100%;">Create Account</button>

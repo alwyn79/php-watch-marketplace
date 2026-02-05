@@ -1,36 +1,61 @@
-ROM php:8.2-apache
+FROM php:8.1-apache
 
-# Install dependencies
-RUN apt-get update && apt-get install -y \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    zip \
-    unzip \
-    git \
-    && docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
-
-# Enable Apache Rewrites
-RUN a2enmod rewrite
-
-# Install Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# Set working directory
+# -----------------------------------------
+# Working directory
+# -----------------------------------------
 WORKDIR /var/www/html
 
-# Copy application files
+# -----------------------------------------
+# System packages + PHP extensions
+# -----------------------------------------
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    zip \
+    libzip-dev \
+    netcat-openbsd \
+    && docker-php-ext-install zip pdo pdo_mysql mysqli
+
+# -----------------------------------------
+# Enable Apache rewrite (.htaccess support)
+# -----------------------------------------
+RUN a2enmod rewrite
+RUN sed -i 's/AllowOverride None/AllowOverride All/g' /etc/apache2/apache2.conf
+
+# -----------------------------------------
+# Install Composer
+# -----------------------------------------
+COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
+
+# -----------------------------------------
+# Copy project files
+# -----------------------------------------
 COPY . .
 
+# -----------------------------------------
 # Install PHP dependencies
-RUN composer install --no-dev --optimize-autoloader
+# -----------------------------------------
+RUN composer install --no-interaction --prefer-dist
 
-# Set permissions
-RUN mkdir -p /var/www/html/public/uploads && chown -R www-data:www-data /var/www/html/public/uploads
+# -----------------------------------------
+# Set Apache document root to public
+# -----------------------------------------
+ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
 
-# Configure Apache DocumentRoot to /public
-ENV APACHE_DOCUMENT_ROOT /var/www/html/public
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
-RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' \
+    /etc/apache2/sites-available/*.conf \
+    /etc/apache2/apache2.conf \
+    /etc/apache2/conf-available/*.conf
 
+# -----------------------------------------
+# Expose port
+# -----------------------------------------
 EXPOSE 80
+
+# -----------------------------------------
+# Start sequence
+# 1) Wait for MySQL
+# 2) Seed products
+# 3) Start Apache
+# -----------------------------------------
+CMD ["bash", "-c", "until nc -z db 3306; do echo 'Waiting for MySQL...'; sleep 2; done; php /var/www/html/seed_products.php; apache2-foreground"]

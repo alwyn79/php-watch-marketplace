@@ -4,6 +4,21 @@
         <div class="badge badge-luxury">Authorized Dealer</div>
     </div>
 
+    <!-- Low Stock Alerts -->
+    <?php 
+    $lowStock = array_filter($products, function($p) { return $p['stock'] < 5; });
+    if (!empty($lowStock)): 
+    ?>
+    <div class="card p-4 mb-8" style="border-left: 4px solid #ef4444; background: rgba(239, 68, 68, 0.05);">
+        <h4 class="text-red mb-2"><i class="fas fa-exclamation-triangle"></i> Low Stock Alerts</h4>
+        <ul class="text-sm">
+            <?php foreach ($lowStock as $lp): ?>
+                <li><strong><?= htmlspecialchars($lp['name']) ?></strong> has only <?= $lp['stock'] ?> left!</li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php endif; ?>
+
     <div class="grid" style="grid-template-columns: 1fr 2fr; gap: 2rem;">
         <!-- Add Product Form -->
         <div>
@@ -12,12 +27,12 @@
                 <form action="/seller/add-product" method="POST" enctype="multipart/form-data">
                     <div class="form-group">
                         <label>Watch Model / Name</label>
-                        <input type="text" name="name" placeholder="e.g. Rolex Submariner" required>
+                        <input type="text" name="name" class="form-control" placeholder="e.g. Rolex Submariner" required>
                     </div>
                     
                     <div class="form-group">
                         <label>Category</label>
-                        <select name="category_id">
+                        <select name="category_id" class="form-control">
                             <!-- Ideally fetch from DB, hardcoded for now -->
                             <option value="1">Divers</option>
                             <option value="2">Dress</option>
@@ -28,7 +43,7 @@
                     
                     <div class="form-group">
                         <label>Tier</label>
-                        <select name="tier">
+                        <select name="tier" class="form-control">
                             <option value="budget">Budget (Everyday)</option>
                             <option value="luxury">Luxury (Premium)</option>
                         </select>
@@ -36,17 +51,22 @@
                     
                     <div class="form-group">
                         <label>Price (₹)</label>
-                        <input type="number" step="0.01" name="price" required>
+                        <input type="number" step="0.01" name="price" class="form-control" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Initial Stock</label>
+                        <input type="number" name="stock" class="form-control" value="10" min="1" required>
                     </div>
 
                     <div class="form-group">
                         <label>Description</label>
-                        <textarea name="description" rows="4" required></textarea>
+                        <textarea name="description" class="form-control" rows="4" required></textarea>
                     </div>
                     
                     <div class="form-group">
                         <label>Watch Image</label>
-                        <input type="file" name="image" accept="image/*">
+                        <input type="file" name="image" class="form-control" accept="image/*" style="padding: 0.5rem;">
                         <small class="text-muted">Uploads to S3 Cloud Storage</small>
                     </div>
                     
@@ -80,7 +100,10 @@
                                     <span class="badge badge-sm badge-<?= $product['tier'] ?>" style="position:static; font-size: 0.7rem;"><?= strtoupper($product['tier']) ?></span>
                                 </div>
                                 <div class="flex justify-between items-end">
-                                    <span class="text-muted" style="font-size: 0.8rem;">Listed: <?= date('M d, Y', strtotime($product['created_at'])) ?></span>
+                                    <span class="text-muted" style="font-size: 0.8rem;">
+                                        Listed: <?= date('M d, Y', strtotime($product['created_at'])) ?> | 
+                                        Stock: <strong class="<?= $product['stock'] < 5 ? 'text-red' : '' ?>"><?= $product['stock'] ?></strong>
+                                    </span>
                                     <div>
                                         <!-- Edit/Delete actions could go here -->
                                         <button class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">Edit</button>

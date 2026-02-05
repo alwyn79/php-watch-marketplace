@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+
+  app:
+    build: .
+    container_name: php-watch-app
+    ports:
+      - "8080:80"
+    depends_on:
+      - db
+      - localstack
+    environment:
+      DB_HOST: db
+      DB_NAME: watch_store
+      DB_USER: root
+      DB_PASS: example
+
+      AWS_ENDPOINT: http://localstack:4566
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_REGION: us-east-1
+    volumes:
+      - .:/var/www/html
+    restart: always
+
+
+  db:
+    image: mysql:8
+    container_name: mysql-db
+    environment:
+      MYSQL_ROOT_PASSWORD: example
+      MYSQL_DATABASE: watch_store
+    ports:
+      - "3306:3306"
+    volumes:
+      - db_data:/var/lib/mysql
+      # 🔥 AUTO CREATE TABLES FROM YOUR REPO FILE
+      - ./database.sql:/docker-entrypoint-initdb.d/database.sql
+    restart: always
+
+
+  localstack:
+    image: localstack/localstack
+    container_name: localstack
+    environment:
+      - SERVICES=s3
+      - DEBUG=0
+    ports:
+      - "4566:4566"
+    volumes:
+      - localstack_data:/var/lib/localstack
+    restart: always
+
+
+volumes:
+  db_data:
+  localstack_data:

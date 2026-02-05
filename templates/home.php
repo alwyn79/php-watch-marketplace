@@ -13,10 +13,45 @@
     </div>
 </section>
 
+<!-- Search & Filters -->
+<div class="container mt-8">
+    <div class="card p-6">
+        <form action="/" method="GET" class="flex flex-wrap gap-4 items-end">
+            <div style="flex: 2; min-width: 200px;">
+                <label class="block mb-2 text-sm text-muted">Search Watches</label>
+                <input type="text" name="search" placeholder="Brand, model, or name..." class="form-control" value="<?= htmlspecialchars($_GET['search'] ?? '') ?>">
+            </div>
+            <div style="flex: 1; min-width: 150px;">
+                <label class="block mb-2 text-sm text-muted">Tier</label>
+                <select name="tier" class="form-control">
+                    <option value="">All Tiers</option>
+                    <option value="budget" <?= isset($_GET['tier']) && $_GET['tier'] == 'budget' ? 'selected' : '' ?>>Budget</option>
+                    <option value="luxury" <?= isset($_GET['tier']) && $_GET['tier'] == 'luxury' ? 'selected' : '' ?>>Luxury</option>
+                </select>
+            </div>
+            <div style="flex: 1; min-width: 150px;">
+                <label class="block mb-2 text-sm text-muted">Price Range</label>
+                <div class="flex gap-2">
+                    <input type="number" name="min_price" placeholder="Min" class="form-control" value="<?= htmlspecialchars($_GET['min_price'] ?? '') ?>">
+                    <input type="number" name="max_price" placeholder="Max" class="form-control" value="<?= htmlspecialchars($_GET['max_price'] ?? '') ?>">
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary">Apply Filters</button>
+            <a href="/" class="btn btn-outline" title="Clear Filters"><i class="fas fa-times"></i></a>
+        </form>
+    </div>
+</div>
+
 <!-- Featured Collection -->
 <section class="container mt-8">
     <div class="flex justify-between items-center mb-8">
-        <h2>Latest Arrivals</h2>
+        <h2><?php 
+            if (isset($_GET['search']) || isset($_GET['tier']) || isset($_GET['category'])) {
+                echo "Search Results";
+            } else {
+                echo "Latest Arrivals";
+            }
+        ?></h2>
         <a href="#" class="text-gold">View All <i class="fas fa-arrow-right"></i></a>
     </div>
 

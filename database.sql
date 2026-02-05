@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS products (
     description TEXT,
     price DECIMAL(10, 2) NOT NULL,
     tier ENUM('budget', 'luxury') NOT NULL DEFAULT 'budget',
+    stock INT DEFAULT 10,
     image_url VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -64,6 +65,8 @@ CREATE TABLE IF NOT EXISTS orders (
     user_id INT NOT NULL,
     total DECIMAL(10, 2) NOT NULL,
     status ENUM('pending', 'paid', 'shipped', 'completed', 'cancelled') DEFAULT 'pending',
+    tracking_number VARCHAR(255) DEFAULT NULL,
+    shipping_address TEXT DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );

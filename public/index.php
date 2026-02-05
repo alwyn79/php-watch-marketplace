@@ -7,9 +7,41 @@ $path = parse_url($request, PHP_URL_PATH);
 // Simple Router
 switch ($path) {
     case '/':
-        // Fetch products
+        // Fetch products with filters
         $pdo = db();
-        $stmt = $pdo->query("SELECT * FROM products ORDER BY created_at DESC LIMIT 8");
+        $params = [];
+        $sql = "SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE 1=1";
+        
+        if (isset($_GET['search']) && !empty($_GET['search'])) {
+            $sql .= " AND p.name LIKE ?";
+            $params[] = '%' . $_GET['search'] . '%';
+        }
+        
+        if (isset($_GET['tier']) && !empty($_GET['tier'])) {
+            $sql .= " AND p.tier = ?";
+            $params[] = $_GET['tier'];
+        }
+
+        if (isset($_GET['category']) && !empty($_GET['category'])) {
+            $sql .= " AND (c.name = ? OR p.tier = ?)"; // Support legacy tier-as-category links
+            $params[] = $_GET['category'];
+            $params[] = $_GET['category'];
+        }
+        
+        if (isset($_GET['min_price'])) {
+            $sql .= " AND p.price >= ?";
+            $params[] = (float)$_GET['min_price'];
+        }
+        
+        if (isset($_GET['max_price']) && !empty($_GET['max_price'])) {
+            $sql .= " AND p.price <= ?";
+            $params[] = (float)$_GET['max_price'];
+        }
+
+        $sql .= " ORDER BY p.created_at DESC LIMIT 20";
+        
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
         $products = $stmt->fetchAll();
         
         view('header');
@@ -112,14 +144,15 @@ switch ($path) {
             $price = $_POST['price'];
             $tier = $_POST['tier'];
             $category = $_POST['category_id'];
+            $stock = $_POST['stock'] ?? 10;
             
             $imageUrl = null;
             if (isset($_FILES['image']) && $_FILES['image']['error'] === 0) {
                 $imageUrl = upload_image($_FILES['image']);
             }
             
-            $stmt = db()->prepare("INSERT INTO products (seller_id, category_id, name, description, price, tier, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([current_user()['id'], $category, $name, $desc, $price, $tier, $imageUrl]);
+            $stmt = db()->prepare("INSERT INTO products (seller_id, category_id, name, description, price, tier, stock, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([current_user()['id'], $category, $name, $desc, $price, $tier, $stock, $imageUrl]);
             
             redirect('/seller/dashboard');
         }
@@ -127,15 +160,35 @@ switch ($path) {
 
     case '/admin/dashboard':
         require_role('admin');
+        $pdo = db();
         // Fetch stats
-        $users = db()->query("SELECT * FROM users ORDER BY created_at DESC")->fetchAll();
-        // Fixed: Explicitly select product id to avoid ambiguity if column names clash, though here it's fine. 
-        // More importantly, fetch Status for users.
-        $products = db()->query("SELECT p.*, u.name as seller_name FROM products p JOIN users u ON p.seller_id = u.id ORDER BY p.created_at DESC")->fetchAll();
+        $users = $pdo->query("SELECT * FROM users ORDER BY created_at DESC")->fetchAll();
+        $products = $pdo->query("SELECT p.id, p.seller_id, p.category_id, p.name, p.description, p.price, p.tier, p.stock, p.image_url, p.created_at, u.name as seller_name FROM products p JOIN users u ON p.seller_id = u.id ORDER BY p.created_at DESC")->fetchAll();
+        $orders = $pdo->query("SELECT o.*, u.name as user_name FROM orders o JOIN users u ON o.user_id = u.id ORDER BY o.created_at DESC")->fetchAll();
+        
+        $totalSales = $pdo->query("SELECT SUM(total) FROM orders WHERE status = 'paid' OR status = 'shipped' OR status = 'completed'")->fetchColumn();
         
         view('header');
-        view('dashboard_admin', ['users' => $users, 'products' => $products]);
+        view('dashboard_admin', [
+            'users' => $users, 
+            'products' => $products, 
+            'orders' => $orders,
+            'totalSales' => $totalSales ?: 0
+        ]);
         view('footer');
+        break;
+
+    case '/admin/order/update':
+        require_role('admin');
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $id = $_POST['id'];
+            $status = $_POST['status'];
+            $tracking = $_POST['tracking_number'];
+            
+            $stmt = db()->prepare("UPDATE orders SET status = ?, tracking_number = ? WHERE id = ?");
+            $stmt->execute([$status, $tracking, $id]);
+            redirect('/admin/dashboard');
+        }
         break;
 
     case '/admin/user/approve':
@@ -195,9 +248,9 @@ switch ($path) {
         break;
         
     case '/cart':
-        // Show cart
+        require_role('user');
         view('header');
-        view('cart'); // Need to implement cart fetching logic here or in template
+        view('cart');
         view('footer');
         break;
 
@@ -208,7 +261,6 @@ switch ($path) {
             $productId = $_POST['product_id'];
             $user = current_user();
             
-            // Check if exists
             $stmt = db()->prepare("SELECT * FROM cart WHERE user_id = ? AND product_id = ?");
             $stmt->execute([$user['id'], $productId]);
             $existing = $stmt->fetch();
@@ -220,8 +272,106 @@ switch ($path) {
                 $stmt = db()->prepare("INSERT INTO cart (user_id, product_id, quantity) VALUES (?, ?, 1)");
                 $stmt->execute([$user['id'], $productId]);
             }
-            redirect('/');
+            redirect('/cart');
         }
+        break;
+
+    case '/cart/update':
+        require_role('user');
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $cartId = $_POST['cart_id'];
+            $quantity = (int)$_POST['quantity'];
+            $userId = current_user()['id'];
+            
+            $stmt = db()->prepare("UPDATE cart SET quantity = ? WHERE id = ? AND user_id = ?");
+            $stmt->execute([$quantity, $cartId, $userId]);
+            redirect('/cart');
+        }
+        break;
+
+    case '/cart/remove':
+        require_role('user');
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $cartId = $_POST['cart_id'];
+            $userId = current_user()['id'];
+            
+            $stmt = db()->prepare("DELETE FROM cart WHERE id = ? AND user_id = ?");
+            $stmt->execute([$cartId, $userId]);
+            redirect('/cart');
+        }
+        break;
+
+    case '/checkout':
+        require_role('user');
+        view('header');
+        view('checkout');
+        view('footer');
+        break;
+
+    case '/checkout/process':
+        require_role('user');
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $userId = current_user()['id'];
+            $address = $_POST['address'];
+            
+            $pdo = db();
+            $pdo->beginTransaction();
+            
+            try {
+                // 1. Get Cart Items
+                $stmt = $pdo->prepare("SELECT c.*, p.price, p.stock FROM cart c JOIN products p ON c.product_id = p.id WHERE c.user_id = ?");
+                $stmt->execute([$userId]);
+                $items = $stmt->fetchAll();
+                
+                if (empty($items)) throw new Exception("Cart is empty");
+                
+                $total = 0;
+                foreach ($items as $item) {
+                    $total += $item['price'] * $item['quantity'];
+                    if ($item['stock'] < $item['quantity']) {
+                        throw new Exception("Insufficent stock for " . $item['product_id']);
+                    }
+                }
+                
+                // 2. Create Order
+                $stmt = $pdo->prepare("INSERT INTO orders (user_id, total, shipping_address, status) VALUES (?, ?, ?, 'paid')");
+                $stmt->execute([$userId, $total, $address]);
+                $orderId = $pdo->lastInsertId();
+                
+                // 3. Create Order Items & Update Stock
+                foreach ($items as $item) {
+                    $stmt = $pdo->prepare("INSERT INTO order_items (order_id, product_id, quantity, price) VALUES (?, ?, ?, ?)");
+                    $stmt->execute([$orderId, $item['product_id'], $item['quantity'], $item['price']]);
+                    
+                    $stmt = $pdo->prepare("UPDATE products SET stock = stock - ? WHERE id = ?");
+                    $stmt->execute([$item['quantity'], $item['product_id']]);
+                }
+                
+                // 4. Clear Cart
+                $stmt = $pdo->prepare("DELETE FROM cart WHERE user_id = ?");
+                $stmt->execute([$userId]);
+                
+                $pdo->commit();
+                redirect('/user/orders');
+                
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                die("Checkout Failed: " . $e->getMessage());
+            }
+        }
+        break;
+
+    case '/user/dashboard':
+    case '/user/orders':
+        require_role('user');
+        $userId = current_user()['id'];
+        $orders = db()->prepare("SELECT * FROM orders WHERE user_id = ? ORDER BY created_at DESC");
+        $orders->execute([$userId]);
+        $orders = $orders->fetchAll();
+        
+        view('header');
+        view('dashboard_user', ['orders' => $orders]);
+        view('footer');
         break;
 
     default:

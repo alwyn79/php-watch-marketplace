@@ -1,34 +1,32 @@
 <?php
 // setup_sqlite.php
-// Run this file once to create the database without needing MySQL!
-
-require_once 'config/database.php';
-
-echo "Setting up local SQLite database...\n";
+$dbPath = __DIR__ . '/database.sqlite';
 
 try {
-    $db = get_db_connection();
-    
-    // 1. Users
+    $db = new PDO("sqlite:" . $dbPath);
+    $db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+
+    echo "Creating tables in SQLite...\n";
+
+    // Users
     $db->exec("CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
         email TEXT NOT NULL UNIQUE,
         password TEXT NOT NULL,
-        role TEXT DEFAULT 'user',
+        role TEXT CHECK(role IN ('user', 'seller', 'admin')) DEFAULT 'user',
+        status TEXT CHECK(status IN ('pending', 'approved', 'rejected')) DEFAULT 'approved',
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )");
-    echo "✔ Users table created.\n";
 
-    // 2. Categories
+    // Categories
     $db->exec("CREATE TABLE IF NOT EXISTS categories (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL UNIQUE,
         description TEXT
     )");
-    echo "✔ Categories table created.\n";
 
-    // 3. Products
+    // Products
     $db->exec("CREATE TABLE IF NOT EXISTS products (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         seller_id INTEGER NOT NULL,
@@ -36,15 +34,15 @@ try {
         name TEXT NOT NULL,
         description TEXT,
         price REAL NOT NULL,
-        tier TEXT NOT NULL DEFAULT 'budget',
+        tier TEXT CHECK(tier IN ('budget', 'luxury')) NOT NULL DEFAULT 'budget',
+        stock INTEGER DEFAULT 10,
         image_url TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (seller_id) REFERENCES users(id) ON DELETE CASCADE,
         FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE SET NULL
     )");
-    echo "✔ Products table created.\n";
 
-    // 4. Cart
+    // Cart
     $db->exec("CREATE TABLE IF NOT EXISTS cart (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
@@ -52,27 +50,58 @@ try {
         quantity INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+        UNIQUE(user_id, product_id)
+    )");
+
+    // Wishlist
+    $db->exec("CREATE TABLE IF NOT EXISTS wishlist (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+        UNIQUE(user_id, product_id)
+    )");
+
+    // Orders
+    $db->exec("CREATE TABLE IF NOT EXISTS orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        total REAL NOT NULL,
+        status TEXT CHECK(status IN ('pending', 'paid', 'shipped', 'completed', 'cancelled')) DEFAULT 'pending',
+        tracking_number TEXT DEFAULT NULL,
+        shipping_address TEXT DEFAULT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    )");
+
+    // Order Items
+    $db->exec("CREATE TABLE IF NOT EXISTS order_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        order_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        quantity INTEGER NOT NULL,
+        price REAL NOT NULL,
+        FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
         FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
     )");
-    echo "✔ Cart table created.\n";
 
-    // Seed Data
+    // Default Data
+    $db->exec("INSERT OR IGNORE INTO categories (name, description) VALUES 
+        ('Divers', 'Water resistant watches for diving'),
+        ('Dress', 'Elegant watches for formal occasions'),
+        ('Sports', 'Durable watches for active lifestyles'),
+        ('Smart', 'Connected timepieces with smart features')");
+
     // Admin
-    $pass = password_hash('password123', PASSWORD_DEFAULT);
-    $stmt = $db->prepare("INSERT OR IGNORE INTO users (name, email, password, role) VALUES (?, ?, ?, ?)");
-    $stmt->execute(['Admin User', 'admin@timepiece.com', $pass, 'admin']);
-    
-    // Categories
-    $cats = ['Divers', 'Dress', 'Sports', 'Smart'];
-    $stmt = $db->prepare("INSERT OR IGNORE INTO categories (name, description) VALUES (?, 'Standard category')");
-    foreach ($cats as $c) {
-        $stmt->execute([$c]);
-    }
+    $adminPass = password_hash('admin123', PASSWORD_DEFAULT);
+    $db->exec("INSERT OR IGNORE INTO users (name, email, password, role, status) VALUES 
+        ('System Admin', 'admin@timepiece.com', '$adminPass', 'admin', 'approved')");
 
-    echo "✔ Default data seeded.\n";
-    echo "\nSuccess! Your database is ready in 'database.sqlite'.\n";
-    echo "You can now start the server with: php -S localhost:8000 -t public\n";
+    echo "✔ Success! Your SQLite database is ready.\n";
 
 } catch (Exception $e) {
-    echo "Error: " . $e->getMessage();
+    die("Error setting up database: " . $e->getMessage());
 }

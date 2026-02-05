@@ -88,7 +88,7 @@ try {
         ]
     ];
 
-    $stmt = $db->prepare("INSERT INTO products (seller_id, category_id, name, description, price, tier, image_url) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    $stmt = $db->prepare("INSERT INTO products (seller_id, category_id, name, description, price, tier, stock, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
 
     foreach ($products as $p) {
         $stmt->execute([
@@ -98,6 +98,7 @@ try {
             $p['description'],
             $p['price'],
             $p['tier'],
+            $p['stock'] ?? 10,
             $p['image_url']
         ]);
         echo "Added: {$p['name']}\n";

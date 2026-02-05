@@ -24,9 +24,11 @@
                         <li><a href="/seller/dashboard" class="text-gold">Seller Dashboard</a></li>
                     <?php elseif (current_user()['role'] === 'admin'): ?>
                         <li><a href="/admin/dashboard" class="text-gold">Admin</a></li>
+                    <?php elseif (current_user()['role'] === 'user'): ?>
+                        <li><a href="/user/orders">My Orders</a></li>
                     <?php endif; ?>
                     
-                    <li><a href="/cart"><i class="fas fa-shopping-bag"></i> (<?= get_cart_count() ?>)</a></li>
+                    <li><a href="/cart" title="View Cart"><i class="fas fa-shopping-bag"></i> (<?= get_cart_count() ?>)</a></li>
                     <li><a href="/logout">Logout</a></li>
                 <?php else: ?>
                     <li><a href="/login">Login</a></li>
