@@ -4,11 +4,12 @@
         
         <?php if (isset($error)): ?>
             <div style="background: rgba(255,0,0,0.1); border: 1px solid red; color: red; padding: 1rem; margin-bottom: 1rem; border-radius: 4px;">
-                <?= $error ?>
+                <?= e($error) ?>
             </div>
         <?php endif; ?>
 
         <form action="/login" method="POST">
+            <?= csrf_field() ?>
             <div class="form-group">
                 <label>Email Address</label>
                 <input type="email" name="email" class="form-control" required>

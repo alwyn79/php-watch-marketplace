@@ -25,6 +25,7 @@
             <div class="card p-8 sticky" style="top: 100px;">
                 <h3 class="mb-4">List New Timepiece</h3>
                 <form action="/seller/add-product" method="POST" enctype="multipart/form-data">
+                    <?= csrf_field() ?>
                     <div class="form-group">
                         <label>Watch Model / Name</label>
                         <input type="text" name="name" class="form-control" placeholder="e.g. Rolex Submariner" required>

@@ -87,6 +87,7 @@
                     <div class="flex justify-between items-center">
                         <span style="font-family: var(--font-heading); font-size: 1.25rem;">₹<?= number_format($product['price']) ?></span>
                         <form action="/cart/add" method="POST">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="product_id" value="<?= $product['id'] ?>">
                             <button type="submit" class="btn btn-primary" style="padding: 0.5rem 1rem; font-size: 0.8rem;">Add to Cart</button>
                         </form>

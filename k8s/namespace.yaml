@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: watch-app
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: monitoring

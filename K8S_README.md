@@ -2,6 +2,12 @@
 
 This guide explains how to deploy your WatchStore to a local Kubernetes cluster (like Docker Desktop K8s, Minikube, or Kubeadm).
 
+> **Observability architecture** – the PHP pods **push** all telemetry
+> (traces, logs, metrics) to a single collector pod. That collector is the only
+> target Prometheus scrapes, and it forwards data on to Grafana/Loki/Tempo.
+> This “alloy” design keeps the app tier simple (one outbound connection,
+> no listening ports) and scales nicely.
+
 ## 1. Prerequisites
 - **Docker Desktop** (with Kubernetes enabled) OR **Minikube**.
 - **kubectl** command line tool.
@@ -20,20 +26,22 @@ docker build -t watch-store:latest .
 Run these commands in order to create all the resources:
 
 ```bash
-# 1. Create the Namespace
-kubectl apply -f k8s/01-namespace.yaml
+# 1. Create the Namespaces
+kubectl apply -f k8s/namespace.yaml
 
 # 2. Set up Configuration (Env Variables)
-kubectl apply -f k8s/02-configmaps.yaml
+kubectl apply -f k8s/configmap.yaml
 
-# 3. Start LocalStack (S3)
-kubectl apply -f k8s/03-localstack.yaml
-
-# 4. Start MySQL Database
-kubectl apply -f k8s/04-mysql.yaml
+# 3. Start MySQL Database
+kubectl apply -f k8s/mysql.yaml
 
 # 5. Start the PHP Application (3 Replicas)
-kubectl apply -f k8s/05-app.yaml
+kubectl apply -f k8s/app.yaml
+
+# 6. Set up Monitoring (Grafana, Loki, Tempo, Prometheus)
+kubectl apply -f k8s/monitoring-stack.yaml
+kubectl apply -f k8s/otel-collector.yaml
+kubectl apply -f k8s/faro-collector.yaml
 ```
 
 ## 4. Initialization (Important!)
@@ -57,4 +65,17 @@ Find the Service address:
 kubectl get svc -n watch-marketplace
 ```
 
-If using Docker Desktop, it should be available at **http://localhost**.
+If using Minikube:
+```bash
+minikube service php-watch -n watch-app
+```
+
+## 6. Access Monitoring (Grafana)
+Grafana is exposed on NodePort 30000.
+```bash
+# Get the URL if using Minikube
+minikube service grafana -n monitoring --url
+```
+Log in with:
+- **URL**: http://<minikube-ip>:30000
+- **User**: (Anonymous Admin access is enabled in the manifest)

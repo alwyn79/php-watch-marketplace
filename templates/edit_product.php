@@ -6,6 +6,7 @@
 
     <div class="card p-8" style="max-width: 600px; margin: 0 auto;">
         <form action="/admin/product/edit?id=<?= $product['id'] ?>" method="POST" enctype="multipart/form-data">
+            <?= csrf_field() ?>
             <div class="form-group">
                 <label>Watch Model / Name</label>
                 <input type="text" name="name" class="form-control" value="<?= htmlspecialchars($product['name']) ?>" required>

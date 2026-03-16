@@ -1,8 +1,26 @@
 <?php
-require_once __DIR__ . '/../src/functions.php';
+ob_start(); // ✅ Buffer all output — prevents any accidental early output breaking headers
+
+require_once __DIR__ . '/../src/functions.php'; // session_start() first
+
+// ── OTEL: combined instrumentation + metrics helper ──────────────────────
+// single include replaces the old otel_metrics.php and otel_instrumentation.php
+// files.  Data is still pushed to the collector pod (alloy/push model).
+require_once __DIR__ . '/otel.php';
 
 $request = $_SERVER['REQUEST_URI'];
 $path = parse_url($request, PHP_URL_PATH);
+
+function require_csrf_for_post(): void {
+    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') return;
+    if (!csrf_is_valid($_POST['_csrf'] ?? null)) {
+        http_response_code(400);
+        echo "Bad Request";
+        exit;
+    }
+}
+
+
 
 // Simple Router
 switch ($path) {
@@ -12,30 +30,35 @@ switch ($path) {
         $params = [];
         $sql = "SELECT p.*, c.name as category_name FROM products p LEFT JOIN categories c ON p.category_id = c.id WHERE 1=1";
         
-        if (isset($_GET['search']) && !empty($_GET['search'])) {
+        $search = request_string('search', 200, 'get');
+        if ($search !== null) {
             $sql .= " AND p.name LIKE ?";
-            $params[] = '%' . $_GET['search'] . '%';
+            $params[] = '%' . $search . '%';
         }
         
-        if (isset($_GET['tier']) && !empty($_GET['tier'])) {
+        $tier = request_string('tier', 20, 'get');
+        if ($tier !== null && in_array($tier, ['budget', 'luxury'], true)) {
             $sql .= " AND p.tier = ?";
-            $params[] = $_GET['tier'];
+            $params[] = $tier;
         }
 
-        if (isset($_GET['category']) && !empty($_GET['category'])) {
+        $category = request_string('category', 50, 'get');
+        if ($category !== null) {
             $sql .= " AND (c.name = ? OR p.tier = ?)"; // Support legacy tier-as-category links
-            $params[] = $_GET['category'];
-            $params[] = $_GET['category'];
+            $params[] = $category;
+            $params[] = $category;
         }
         
-        if (isset($_GET['min_price'])) {
+        $minPrice = request_float('min_price', 0, null, 'get');
+        if ($minPrice !== null) {
             $sql .= " AND p.price >= ?";
-            $params[] = (float)$_GET['min_price'];
+            $params[] = $minPrice;
         }
         
-        if (isset($_GET['max_price']) && !empty($_GET['max_price'])) {
+        $maxPrice = request_float('max_price', 0, null, 'get');
+        if ($maxPrice !== null) {
             $sql .= " AND p.price <= ?";
-            $params[] = (float)$_GET['max_price'];
+            $params[] = $maxPrice;
         }
 
         $sql .= " ORDER BY p.created_at DESC LIMIT 20";
@@ -51,8 +74,16 @@ switch ($path) {
 
     case '/login':
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $email = $_POST['email'];
-            $password = $_POST['password'];
+            require_csrf_for_post();
+            $email = request_string('email', 255, 'post');
+            $password = (string)($_POST['password'] ?? '');
+            if ($email === null || !filter_var($email, FILTER_VALIDATE_EMAIL) || $password === '') {
+                $error = "Invalid credentials";
+                view('header');
+                view('login', ['error' => $error]);
+                view('footer');
+                break;
+            }
             
             $stmt = db()->prepare("SELECT * FROM users WHERE email = ?");
             $stmt->execute([$email]);
@@ -83,12 +114,23 @@ switch ($path) {
         
     case '/register':
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $name = $_POST['name'];
-            $email = $_POST['email'];
-            $password = password_hash($_POST['password'], PASSWORD_DEFAULT);
-            $role = $_POST['role']; 
+            require_csrf_for_post();
+            $name = request_string('name', 100, 'post');
+            $email = request_string('email', 255, 'post');
+            $plainPassword = (string)($_POST['password'] ?? '');
+            $role = request_string('role', 20, 'post') ?? 'user';
+
+            if ($name === null || $email === null || !filter_var($email, FILTER_VALIDATE_EMAIL) || strlen($plainPassword) < 6) {
+                view('header');
+                view('register', ['error' => 'Please provide valid details (password must be at least 6 characters).']);
+                view('footer');
+                break;
+            }
+
+            $password = password_hash($plainPassword, PASSWORD_DEFAULT);
             
             if ($role === 'admin') $role = 'user';
+            if (!in_array($role, ['user', 'seller'], true)) $role = 'user';
             
             // New Logic: Sellers are pending by default, Users are approved
             $status = ($role === 'seller') ? 'pending' : 'approved';
@@ -139,12 +181,17 @@ switch ($path) {
     case '/seller/add-product':
         require_role('seller');
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $name = $_POST['name'];
-            $desc = $_POST['description'];
-            $price = $_POST['price'];
-            $tier = $_POST['tier'];
-            $category = $_POST['category_id'];
-            $stock = $_POST['stock'] ?? 10;
+            require_csrf_for_post();
+            $name = request_string('name', 200, 'post');
+            $desc = request_string('description', 5000, 'post');
+            $price = request_float('price', 0, null, 'post');
+            $tier = request_string('tier', 20, 'post');
+            $category = request_int('category_id', 1, null, 'post');
+            $stock = request_int('stock', 1, 100000, 'post') ?? 10;
+
+            if ($name === null || $desc === null || $price === null || !in_array($tier, ['budget', 'luxury'], true) || $category === null) {
+                redirect('/seller/dashboard');
+            }
             
             $imageUrl = null;
             if (isset($_FILES['image']) && $_FILES['image']['error'] === 0) {
@@ -181,9 +228,13 @@ switch ($path) {
     case '/admin/order/update':
         require_role('admin');
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $id = $_POST['id'];
-            $status = $_POST['status'];
-            $tracking = $_POST['tracking_number'];
+            require_csrf_for_post();
+            $id = request_int('id', 1, null, 'post');
+            $status = request_string('status', 20, 'post');
+            $tracking = request_string('tracking_number', 100, 'post') ?? '';
+            if ($id === null || !in_array($status, ['paid', 'shipped', 'completed', 'cancelled'], true)) {
+                redirect('/admin/dashboard');
+            }
             
             $stmt = db()->prepare("UPDATE orders SET status = ?, tracking_number = ? WHERE id = ?");
             $stmt->execute([$status, $tracking, $id]);
@@ -194,8 +245,12 @@ switch ($path) {
     case '/admin/user/approve':
         require_role('admin');
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $id = $_POST['id'];
-            $action = $_POST['action']; // 'approve' or 'reject'
+            require_csrf_for_post();
+            $id = request_int('id', 1, null, 'post');
+            $action = request_string('action', 20, 'post'); // 'approve' or 'reject'
+            if ($id === null || !in_array($action, ['approve', 'reject'], true)) {
+                redirect('/admin/dashboard');
+            }
             $status = ($action === 'approve') ? 'approved' : 'rejected';
             
             $stmt = db()->prepare("UPDATE users SET status = ? WHERE id = ?");
@@ -207,7 +262,9 @@ switch ($path) {
     case '/admin/product/delete':
         require_role('admin');
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $id = $_POST['id'];
+            require_csrf_for_post();
+            $id = request_int('id', 1, null, 'post');
+            if ($id === null) redirect('/admin/dashboard');
             $stmt = db()->prepare("DELETE FROM products WHERE id = ?");
             $stmt->execute([$id]);
             redirect('/admin/dashboard');
@@ -216,15 +273,19 @@ switch ($path) {
 
     case '/admin/product/edit':
         require_role('admin');
-        $id = $_GET['id'] ?? null;
+        $id = request_int('id', 1, null, 'get');
         if (!$id) redirect('/admin/dashboard');
         
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $name = $_POST['name'];
-            $desc = $_POST['description'];
-            $price = $_POST['price'];
-            $tier = $_POST['tier'];
-            $category = $_POST['category_id'];
+            require_csrf_for_post();
+            $name = request_string('name', 200, 'post');
+            $desc = request_string('description', 5000, 'post');
+            $price = request_float('price', 0, null, 'post');
+            $tier = request_string('tier', 20, 'post');
+            $category = request_int('category_id', 1, null, 'post');
+            if ($name === null || $desc === null || $price === null || !in_array($tier, ['budget', 'luxury'], true) || $category === null) {
+                redirect('/admin/dashboard');
+            }
             
             // Check if Image uploaded
             if (isset($_FILES['image']) && $_FILES['image']['error'] === 0) {
@@ -256,9 +317,11 @@ switch ($path) {
 
     case '/cart/add':
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            require_csrf_for_post();
             if (!is_logged_in()) redirect('/login');
             
-            $productId = $_POST['product_id'];
+            $productId = request_int('product_id', 1, null, 'post');
+            if ($productId === null) redirect('/');
             $user = current_user();
             
             $stmt = db()->prepare("SELECT * FROM cart WHERE user_id = ? AND product_id = ?");
@@ -279,8 +342,10 @@ switch ($path) {
     case '/cart/update':
         require_role('user');
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $cartId = $_POST['cart_id'];
-            $quantity = (int)$_POST['quantity'];
+            require_csrf_for_post();
+            $cartId = request_int('cart_id', 1, null, 'post');
+            $quantity = request_int('quantity', 1, 1000, 'post');
+            if ($cartId === null || $quantity === null) redirect('/cart');
             $userId = current_user()['id'];
             
             $stmt = db()->prepare("UPDATE cart SET quantity = ? WHERE id = ? AND user_id = ?");
@@ -292,7 +357,9 @@ switch ($path) {
     case '/cart/remove':
         require_role('user');
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $cartId = $_POST['cart_id'];
+            require_csrf_for_post();
+            $cartId = request_int('cart_id', 1, null, 'post');
+            if ($cartId === null) redirect('/cart');
             $userId = current_user()['id'];
             
             $stmt = db()->prepare("DELETE FROM cart WHERE id = ? AND user_id = ?");
@@ -311,8 +378,15 @@ switch ($path) {
     case '/checkout/process':
         require_role('user');
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            require_csrf_for_post();
             $userId = current_user()['id'];
-            $address = $_POST['address'];
+            $address = request_string('address', 1000, 'post');
+            if ($address === null) {
+                view('header');
+                view('checkout', ['error' => 'Please provide a shipping address.']);
+                view('footer');
+                break;
+            }
             
             $pdo = db();
             $pdo->beginTransaction();
@@ -329,7 +403,7 @@ switch ($path) {
                 foreach ($items as $item) {
                     $total += $item['price'] * $item['quantity'];
                     if ($item['stock'] < $item['quantity']) {
-                        throw new Exception("Insufficent stock for " . $item['product_id']);
+                        throw new Exception("Insufficient stock for product " . $item['product_id']);
                     }
                 }
                 
@@ -356,7 +430,9 @@ switch ($path) {
                 
             } catch (Exception $e) {
                 $pdo->rollBack();
-                die("Checkout Failed: " . $e->getMessage());
+                view('header');
+                view('checkout', ['error' => 'Checkout failed. Please try again.']);
+                view('footer');
             }
         }
         break;

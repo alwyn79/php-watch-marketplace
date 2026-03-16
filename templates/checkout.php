@@ -1,6 +1,12 @@
 <div class="container mt-8">
     <h1 class="mb-8">Checkout</h1>
     
+    <?php if (isset($error) && $error): ?>
+        <div style="background: rgba(255,0,0,0.1); border: 1px solid red; color: red; padding: 1rem; margin-bottom: 1rem; border-radius: 4px;">
+            <?= e($error) ?>
+        </div>
+    <?php endif; ?>
+
     <?php 
     $userId = current_user()['id'];
     $stmt = db()->prepare("
@@ -27,6 +33,7 @@
             <div class="card p-8">
                 <h3 class="mb-6">Shipping Details</h3>
                 <form action="/checkout/process" method="POST">
+                    <?= csrf_field() ?>
                     <div class="mb-4">
                         <label class="block mb-2">Full Name</label>
                         <input type="text" name="name" class="form-control" value="<?= htmlspecialchars(current_user()['name']) ?>" required>

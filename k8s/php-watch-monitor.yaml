@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: php-watch-monitor
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  # since we’re using push mode (alloy pattern) the app pods no longer
+  # expose /metrics.php.  scrape the collector instead – there is one pod
+  # in the watch-app namespace that aggregates everything.
+  selector:
+    matchLabels:
+      app: otel-collector
+  namespaceSelector:
+    matchNames:
+      - watch-app
+  endpoints:
+    - port: prometheus
+      path: /metrics
+      interval: 15s

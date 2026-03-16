@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-watch
+  namespace: watch-app
+  labels:
+    app: php-watch
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: php-watch
+  template:
+    metadata:
+      labels:
+        app: php-watch
+    spec:
+      containers:
+        # 🔹 Main PHP Application
+        - name: php-watch
+          image: alwyn79/php-app:m8
+          ports:
+            - name: http
+              containerPort: 80
+            - name: apache-status
+              containerPort: 8080
+          env:
+            - name: DB_HOST
+              value: mysql
+            - name: DB_USER
+              value: root
+            - name: DB_PASS
+              value: example
+            - name: DB_NAME
+              value: watch_store
+            # URL for the Grafana Faro Web SDK running in the frontend.
+            # without this the client defaults to sending `/collect` to the
+            # current host (which is why you saw failed “collect” fetches).
+            - name: FARO_COLLECTOR_URL
+              value: "http://faro-collector.monitoring.svc.cluster.local:12348"
+
+        # 🔹 Apache Exporter Sidecar
+        - name: apache-exporter
+          image: bitnami/apache-exporter:latest
+          args:
+            - --scrape_uri=http://localhost:8080/?auto
+          ports:
+            - name: metrics
+              containerPort: 9117
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: php-watch
+  namespace: watch-app
+  labels:
+    app: php-watch
+spec:
+  selector:
+    app: php-watch
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+    - name: metrics
+      port: 9117
+      targetPort: 9117
+  type: ClusterIP

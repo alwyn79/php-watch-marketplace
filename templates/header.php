@@ -6,6 +6,28 @@
     <title>Chronos | Luxury & Precision</title>
     <link rel="stylesheet" href="/css/style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <?php $faroUrl = getenv('FARO_COLLECTOR_URL'); ?>
+    <?php if ($faroUrl): ?>
+        <!-- Grafana Faro Web SDK (optional; enabled via FARO_COLLECTOR_URL) -->
+        <script src="https://unpkg.com/@grafana/faro-web-sdk@1.3.4/dist/bundle/faro-web-sdk.iife.js"></script>
+        <script>
+          window.GrafanaFaroWebSdk.initializeFaro({
+            url: <?= json_encode($faroUrl) ?>,
+            app: {
+              name: 'chronos-watch-shop',
+              version: '1.0.0',
+              environment: <?= json_encode(getenv('APP_ENV') ?: 'production') ?>
+            },
+            instrumentations: [
+              ...window.GrafanaFaroWebSdk.getWebInstrumentations({
+                captureConsole: true,
+                captureConsoleDisabledLevels: [],
+              }),
+            ],
+          });
+        </script>
+    <?php endif; ?>
 </head>
 <body>
 

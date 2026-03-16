@@ -1,0 +1,318 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+#  OpenTelemetry Collector — Complete Setup
+#  Includes: Metrics + Traces (Tempo) + Logs (Loki)
+#  Apply with: kubectl apply -f otel-collector.yaml
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# ── 1. COLLECTOR CONFIGURATION ───────────────────────────────────────────────
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-config
+  namespace: watch-app
+data:
+  config.yaml: |
+    receivers:
+      # Receives metrics + traces + logs pushed from PHP app via OTLP
+      otlp:
+        protocols:
+          http:
+            endpoint: "0.0.0.0:4318"
+          grpc:
+            endpoint: "0.0.0.0:4317"
+
+      # Scrapes Apache exporter sidecar
+      prometheus/apache:
+        config:
+          scrape_configs:
+            - job_name: "apache"
+              static_configs:
+                - targets: ["php-watch.watch-app.svc.cluster.local:9117"]
+
+      # Scrapes MySQL exporter
+      prometheus/mysql:
+        config:
+          scrape_configs:
+            - job_name: "mysql"
+              static_configs:
+                - targets: ["mysql-exporter.watch-app.svc.cluster.local:9104"]
+
+      # Kubernetes pod/container/node metrics from kubelet
+      kubeletstats:
+        collection_interval: 30s
+        auth_type: serviceAccount
+        endpoint: "https://${env:NODE_IP}:10250"
+        insecure_skip_verify: true
+        metric_groups:
+          - pod
+          - container
+          - node
+
+      # Kubernetes cluster state (deployments, pods, nodes)
+      k8s_cluster:
+        collection_interval: 30s
+        auth_type: serviceAccount
+        node_conditions_to_report: [Ready, MemoryPressure, DiskPressure]
+        allocatable_types_to_report: [cpu, memory]
+
+    processors:
+      # Batch all telemetry for performance
+      batch:
+        timeout: 10s
+        send_batch_size: 1024
+
+      # Detect environment/system resource info
+      resourcedetection:
+        detectors: [env, system]
+        timeout: 5s
+
+      # Adds Kubernetes metadata to traces and logs
+      k8sattributes:
+        auth_type: serviceAccount
+        passthrough: false
+        extract:
+          metadata:
+            - k8s.pod.name
+            - k8s.namespace.name
+            - k8s.deployment.name
+            - k8s.node.name
+            - k8s.container.name
+
+      # Adds resource attributes to logs for Loki labels
+      resource:
+        attributes:
+          - action: insert
+            key: loki.resource.labels
+            value: k8s.namespace.name, k8s.pod.name, k8s.deployment.name, service.name
+
+    exporters:
+      # Metrics → Prometheus (existing — unchanged)
+      prometheus:
+        endpoint: "0.0.0.0:9464"
+        resource_to_telemetry_conversion:
+          enabled: true
+
+      # Traces → Tempo
+      otlp/tempo:
+        endpoint: "tempo.monitoring.svc.cluster.local:4317"
+        tls:
+          insecure: true
+
+      # Logs → Loki
+      loki:
+        endpoint: "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
+        default_labels_enabled:
+          exporter: false
+          job: true
+
+      # Debug logging
+      debug:
+        verbosity: basic
+
+    service:
+      pipelines:
+        # ── METRICS pipeline (existing — unchanged) ──────────────────────────
+        metrics:
+          receivers:
+            - otlp
+            - prometheus/apache
+            - prometheus/mysql
+            - kubeletstats
+            - k8s_cluster
+          processors:
+            - batch
+            - resourcedetection
+          exporters:
+            - prometheus
+            - debug
+
+        # ── TRACES pipeline (NEW) ─────────────────────────────────────────────
+        traces:
+          receivers:
+            - otlp
+          processors:
+            - batch
+            - resourcedetection
+            - k8sattributes
+          exporters:
+            - otlp/tempo
+            - debug
+
+        # ── LOGS pipeline (NEW) ───────────────────────────────────────────────
+        logs:
+          receivers:
+            - otlp
+          processors:
+            - batch
+            - resourcedetection
+            - k8sattributes
+            - resource
+          exporters:
+            - loki
+            - debug
+
+---
+# ── 2. SERVICE ACCOUNT ────────────────────────────────────────────────────────
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: watch-app
+
+---
+# ── 3. CLUSTER ROLE ───────────────────────────────────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector
+rules:
+  - apiGroups: [""]
+    resources:
+      - nodes
+      - nodes/proxy
+      - nodes/stats
+      - nodes/metrics
+      - pods
+      - services
+      - endpoints
+      - namespaces
+      - resourcequotas
+      - replicationcontrollers
+      - limitranges
+      - persistentvolumeclaims
+      - persistentvolumes
+      - configmaps
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - daemonsets
+      - statefulsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs:
+      - "/metrics"
+      - "/metrics/cadvisor"
+    verbs: ["get"]
+
+---
+# ── 4. CLUSTER ROLE BINDING ───────────────────────────────────────────────────
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: otel-collector
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: watch-app
+
+---
+# ── 5. DEPLOYMENT ─────────────────────────────────────────────────────────────
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+  namespace: watch-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      serviceAccountName: otel-collector
+      containers:
+      - name: otel-collector
+        image: otel/opentelemetry-collector-contrib:0.102.0
+        args:
+          - "--config=/etc/otelcol/config.yaml"
+        ports:
+        - containerPort: 4317
+          name: otlp-grpc
+        - containerPort: 4318
+          name: otlp-http
+        - containerPort: 9464
+          name: metrics
+        env:
+        - name: NODE_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.hostIP
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        volumeMounts:
+        - name: otel-config-volume
+          mountPath: /etc/otelcol/config.yaml
+          subPath: config.yaml
+      volumes:
+      - name: otel-config-volume
+        configMap:
+          name: otel-config
+
+---
+# ── 6. SERVICE ────────────────────────────────────────────────────────────────
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+  namespace: watch-app
+  labels:
+    app: otel-collector
+spec:
+  selector:
+    app: otel-collector
+  ports:
+  - name: otlp-grpc
+    port: 4317
+    targetPort: 4317
+  - name: otlp
+    port: 4318
+    targetPort: 4318
+  - name: metrics
+    port: 9464
+    targetPort: 9464
+
+---
+# ── 7. SERVICE MONITOR ────────────────────────────────────────────────────────
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: otel-collector
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  namespaceSelector:
+    matchNames:
+      - watch-app
+  endpoints:
+  - port: metrics
+    interval: 15s
+    path: /metrics

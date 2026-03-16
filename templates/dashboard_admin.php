@@ -55,6 +55,7 @@
                             <td><?= $o['tracking_number'] ?: '<span class="text-muted">None</span>' ?></td>
                             <td>
                                 <form action="/admin/order/update" method="POST" class="flex gap-2">
+                                    <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= $o['id'] ?>">
                                     <select name="status" class="form-control" style="padding: 0.25rem; font-size: 0.7rem; width: 100px;">
                                         <option value="paid" <?= $o['status'] == 'paid' ? 'selected' : '' ?>>Paid</option>
@@ -108,6 +109,7 @@
                                     <a href="/admin/product/edit?id=<?= $p['id'] ?>" class="btn btn-outline" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">Edit</a>
                                     
                                     <form action="/admin/product/delete" method="POST" onsubmit="return confirm('Are you sure you want to delete this product?');">
+                                        <?= csrf_field() ?>
                                         <input type="hidden" name="id" value="<?= $p['id'] ?>">
                                         <button type="submit" class="text-muted hover:text-red" style="padding: 0.25rem; font-size: 0.8rem; background: none; border: none; cursor: pointer;">
                                             <i class="fas fa-trash"></i>
@@ -158,6 +160,7 @@
                             </td>
                             <td>
                                 <form action="/admin/user/approve" method="POST" style="display:inline;">
+                                    <?= csrf_field() ?>
                                     <input type="hidden" name="id" value="<?= $u['id'] ?>">
                                     <?php if ($u['status'] === 'pending'): ?>
                                         <button type="submit" name="action" value="approve" class="btn btn-primary" style="padding: 0.25rem 0.5rem; font-size: 0.7rem;">Approve</button>

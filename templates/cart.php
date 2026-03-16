@@ -41,11 +41,13 @@
                     </div>
                     <div class="flex items-center gap-4">
                         <form action="/cart/update" method="POST" class="flex items-center gap-2">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="cart_id" value="<?= $item['cart_id'] ?>">
                             <input type="number" name="quantity" value="<?= $item['quantity'] ?>" min="1" max="<?= $item['stock'] ?>" style="width: 60px; padding: 0.25rem; background: #222; border: 1px solid #444; color: white; border-radius: 4px;">
                             <button type="submit" class="btn btn-sm" style="padding: 0.25rem 0.5rem;"><i class="fas fa-sync-alt"></i></button>
                         </form>
                         <form action="/cart/remove" method="POST">
+                            <?= csrf_field() ?>
                             <input type="hidden" name="cart_id" value="<?= $item['cart_id'] ?>">
                             <button type="submit" class="text-muted hover:text-red bg-transparent" style="cursor: pointer; border: none;"><i class="fas fa-trash"></i></button>
                         </form>
